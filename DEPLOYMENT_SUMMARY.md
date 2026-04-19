@@ -27,7 +27,7 @@
 - ✅ **QR Code Auth Flow**: Wallet connection via secure callback
 - ✅ **JWT Token Generation**: 24-hour expiry, signed with JWT_SECRET
 - ✅ **Signature Verification**: ethers.js integration for wallet recovery
-- ✅ **Message Signing**: "Sign this message to connect to Blockstar"
+- ✅ **Message Signing**: "Sign this message to connect to Clawconnect"
 - ✅ **Rate Limiting**: 
   - Global: 100 req/15min
   - Auth: 10 req/15min

@@ -7,59 +7,77 @@ import { purchaseLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
-// POST /purchases
+// Risk tier → price mapping
+const RISK_PRICE: Record<string, number> = {
+  low: 1, medium: 5, high: 25, extreme: 100,
+};
+
+// POST /purchases — deducts from internal balance (no on-chain tx required)
 router.post(
   '/',
   authMiddleware,
   purchaseLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    const { agentProfileId } = req.body;
+    const { agentProfileId, txHash } = req.body;
     const walletAddress = req.walletAddress!;
 
-    if (!agentProfileId) {
-      throw new AppError(400, 'Missing agentProfileId');
-    }
+    if (!agentProfileId) throw new AppError(400, 'Missing agentProfileId');
 
-    // Get agent
     const agent = await supabase.getAgentProfile(agentProfileId);
-    if (!agent) {
-      throw new AppError(404, 'Agent not found');
+    if (!agent) throw new AppError(404, 'Agent not found');
+
+    const price = RISK_PRICE[(agent as any).risk_tier] ?? 1;
+
+    // Fetch current balance directly (snake_case from DB)
+    const userData = await supabase.getOrCreateUser(walletAddress);
+    const currentBalance = Number((userData as any).total_balance ?? 0);
+
+    if (currentBalance < price) {
+      throw new AppError(402, `Insufficient balance — need $${price}, have $${currentBalance.toFixed(2)}`);
     }
 
-    // Check balance (simplified)
-    const user = await supabase.getOrCreateUser(walletAddress);
-    const price = 0.5; // Fixed price for MVP
+    // Deduct balance first (atomic-ish) with ledger entry
+    const agentName = (agent as any).name || 'Unknown Agent';
+    const { newBalance } = await supabase.creditBalance(
+      walletAddress, 
+      -price,
+      'purchase',
+      {
+        agentProfileId,
+        agentName,
+        agentRiskTier: (agent as any).risk_tier,
+        note: `Purchased ${agentName} (${(agent as any).risk_tier} tier) for $${price}`
+      }
+    );
+    cache.delete(`balance:${walletAddress}`);
 
-    if (user.totalBalance < price) {
-      throw new AppError(400, 'Insufficient balance');
-    }
-
-    // Create purchase (4-24h random extraction window)
-    const duration = 4 + Math.random() * 20; // 4-24 hours
+    // Create purchase record
+    const duration = 4 + Math.random() * 20;
     const purchase = await supabase.createPurchase(walletAddress, agentProfileId, price, Math.round(duration));
 
-    // Deduct from balance
-    await supabase.addBalance(walletAddress, -price, 'purchase', purchase.id);
-
-    // Remove listing
-    const listings = await supabase.getMarketplaceListings(1, 1000);
-    const listing = listings.listings.find((l) => l.agent_profile_id === agentProfileId);
-    if (listing) {
-      await supabase.removeListing(listing.id);
-
-      // Backfill marketplace (add new agent)
-      const inactive = await supabase.getInactiveProfiles(5);
-      if (inactive.length > 0) {
-        await supabase.createListing(inactive[0].id);
+    // Remove from marketplace + backfill
+    try {
+      const listings = await supabase.getMarketplaceListings(1, 1000);
+      const listing = listings.listings.find((l: any) => l.agent_profile_id === agentProfileId);
+      if (listing) {
+        await supabase.removeListing(listing.id);
+        const inactive = await supabase.getInactiveProfiles(5);
+        if (inactive.length > 0) await supabase.createListing(inactive[0].id);
       }
+    } catch {}
 
-      // Invalidate marketplace cache (since listings changed)
-      cache.delete(`balance:${walletAddress}`); // Also invalidate user balance cache
-    }
+    // Invalidate caches
+    cache.clearPattern?.('marketplace:');
 
     res.status(201).json({
       success: true,
-      data: purchase,
+      data: {
+        ...purchase,
+        priceCharged: price,
+        newBalance,
+        agentName: (agent as any).name,
+        agentRiskTier: (agent as any).risk_tier,
+      },
       timestamp: new Date().toISOString()
     });
   })

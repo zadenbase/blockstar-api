@@ -72,4 +72,16 @@ router.get(
   })
 );
 
+// GET /users/:wallet/payouts
+router.get(
+  '/:wallet/payouts',
+  authMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const walletAddress = req.params.wallet;
+    if (req.walletAddress !== walletAddress) throw new AppError(403, 'Unauthorized');
+    const payouts = await supabase.getPayoutHistory(walletAddress);
+    res.json({ success: true, data: payouts, timestamp: new Date().toISOString() });
+  })
+);
+
 export default router;

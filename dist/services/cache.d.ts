@@ -3,6 +3,7 @@ declare class CacheService {
     set<T>(key: string, data: T, ttlSeconds: number): void;
     get<T>(key: string): T | null;
     delete(key: string): void;
+    clearPattern(prefix: string): void;
     clear(): void;
     startCleanup(): void;
     getStats(): {

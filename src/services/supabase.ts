@@ -154,9 +154,9 @@ class SupabaseService {
     const { data, error } = await this.client
       .from('purchases')
       .select('*')
-      .eq('user_id', userId)
-      .in('status', ['purchased', 'extracting'])
-      .order('extraction_end_time', { ascending: true });
+      .eq('user_id', userId.toLowerCase())
+      .eq('status', 'purchased')
+      .order('purchased_at', { ascending: false });
 
     if (error) throw error;
     return data || [];
@@ -166,9 +166,8 @@ class SupabaseService {
     const { data, error } = await this.client
       .from('purchases')
       .select('*')
-      .eq('user_id', userId)
-      .in('status', ['completed', 'forfeited'])
-      .order('completed_at', { ascending: false })
+      .eq('user_id', userId.toLowerCase())
+      .order('purchased_at', { ascending: false })
       .limit(limit);
 
     if (error) throw error;
@@ -269,7 +268,7 @@ class SupabaseService {
     }
   }
 
-  async getBalanceHistory(walletAddress: string, limit: number = 20): Promise<BalanceLedger[]> {
+  async getBalanceHistory(walletAddress: string, limit: number = 20): Promise<(BalanceLedger & { parsedMetadata?: any })[]> {
     const { data, error } = await this.client
       .from('balance_ledger')
       .select('*')
@@ -278,7 +277,12 @@ class SupabaseService {
       .limit(limit);
 
     if (error) throw error;
-    return data || [];
+    
+    // Parse metadata JSON for each entry
+    return (data || []).map((entry: any) => ({
+      ...entry,
+      parsedMetadata: entry.metadata ? JSON.parse(entry.metadata) : null
+    }));
   }
 
   // ==== Payouts ====
@@ -318,11 +322,17 @@ class SupabaseService {
     const { data, error } = await this.client
       .from('payout_requests')
       .select('*')
-      .eq('user_id', walletAddress)
+      .eq('user_id', walletAddress.toLowerCase())
       .order('requested_at', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    return (data || []).map((row: any) => ({
+      ...row,
+      amount: row.amount_requested ?? row.amount ?? 0,
+      destination_wallet: row.destination_wallet ?? walletAddress,
+      notes: row.notes ?? null,
+      created_at: row.requested_at ?? row.created_at,
+    }));
   }
 
   async updatePayoutStatus(payoutId: string, status: PayoutStatus, txHash?: string): Promise<PayoutRequest> {
@@ -339,6 +349,103 @@ class SupabaseService {
 
     if (error) throw error;
     return data;
+  }
+
+  // ==== Admin ====
+  async getAllUsers(): Promise<User[]> {
+    const { data, error } = await this.client
+      .from('users')
+      .select('*')
+      .order('total_balance', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async setBalance(walletAddress: string, newBalance: number): Promise<User> {
+    const { data, error } = await this.client
+      .from('users')
+      .upsert({
+        wallet_address: walletAddress.toLowerCase(),
+        total_balance: newBalance,
+        last_activity_at: new Date().toISOString(),
+      }, { onConflict: 'wallet_address' })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async creditBalance(
+    walletAddress: string, 
+    amount: number, 
+    transactionType?: string, 
+    metadata?: { purchaseId?: string; agentProfileId?: string; agentName?: string; agentId?: string; agentRiskTier?: string; direction?: string; entryPrice?: number; exitPrice?: number; leverage?: number; tier?: string; grade?: string; sessionId?: string; tradeDurationSec?: number; note?: string }
+  ): Promise<{ previous: number; newBalance: number; amount: number; ledgerEntryId?: string }> {
+    const wallet = walletAddress.toLowerCase();
+    
+    // Get current balance with explicit logging
+    const { data: existing, error } = await this.client
+      .from('users')
+      .select('total_balance, wallet_address')
+      .eq('wallet_address', wallet)
+      .maybeSingle();
+    
+    if (error) {
+      console.error(`[Supabase] Error fetching balance for ${wallet}: ${error.message}`);
+      throw error;
+    }
+    
+    const previous = Number(existing?.total_balance ?? 0);
+    const newBalance = Math.round((previous + amount) * 10000) / 10000; // 4 decimal precision
+    
+    console.log(`[Supabase] creditBalance: wallet=${wallet}, previous=${previous}, amount=${amount}, newBalance=${newBalance}`);
+    
+    // Determine transaction type based on amount if not provided
+    const txType = transactionType || (amount > 0 ? 'extraction' : amount < 0 ? 'purchase' : 'adjustment');
+    
+    // Insert into balance ledger with metadata
+    const ledgerData: any = {
+      user_id: wallet,
+      amount: amount,
+      transaction_type: txType,
+      related_purchase_id: metadata?.purchaseId || null,
+      created_at: new Date().toISOString()
+    };
+    
+    // Add metadata as JSON if provided
+    if (metadata) {
+      ledgerData.metadata = JSON.stringify(metadata);
+    }
+    
+    const { data: ledgerEntry, error: ledgerError } = await this.client
+      .from('balance_ledger')
+      .insert(ledgerData)
+      .select()
+      .single();
+    
+    if (ledgerError) {
+      console.error(`[Supabase] Failed to create ledger entry: ${ledgerError.message}`);
+    } else {
+      console.log(`[Supabase] Ledger entry created: ${ledgerEntry?.id}, type=${txType}`);
+    }
+    
+    await this.setBalance(walletAddress, newBalance);
+    
+    // Verify the update
+    const { data: verify } = await this.client
+      .from('users')
+      .select('total_balance')
+      .eq('wallet_address', wallet)
+      .single();
+    
+    const verifiedBalance = Number(verify?.total_balance ?? newBalance);
+    
+    return { 
+      previous, 
+      newBalance: verifiedBalance, 
+      amount, 
+      ledgerEntryId: ledgerEntry?.id 
+    };
   }
 }
 

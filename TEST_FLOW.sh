@@ -9,7 +9,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}${CYAN}║           BLOCKSTAR API END-TO-END TEST              ║${NC}"
+echo -e "${BOLD}${CYAN}║          BLOCKSTAR API END-TO-END TEST             ║${NC}"
 echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════════╝${NC}\n"
 
 # 1. Health Check

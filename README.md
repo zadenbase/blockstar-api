@@ -56,7 +56,7 @@ Supabase schema defined in SPEC.md. Initialize with:
 
 Integrate x402 protocol for USDC payments. See:
 - https://x402.dev/docs
-- Blockstar spec for contract addresses
+- Clawconnect spec for contract addresses
 
 ## Security
 

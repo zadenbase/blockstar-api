@@ -34,6 +34,12 @@ class CacheService {
     this.cache.delete(key);
   }
 
+  clearPattern(prefix: string): void {
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) this.cache.delete(key);
+    }
+  }
+
   clear(): void {
     this.cache.clear();
   }

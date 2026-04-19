@@ -11,6 +11,8 @@ import purchaseRoutes from './routes/purchases';
 import extractionRoutes from './routes/extractions';
 import balanceRoutes from './routes/balance';
 import payoutRoutes from './routes/payouts';
+import masterRoutes from './routes/master';
+import adminRoutes from './routes/admin';
 
 dotenv.config();
 
@@ -47,6 +49,8 @@ app.use('/purchases', purchaseRoutes);
 app.use('/extractions', extractionRoutes);
 app.use('/users', balanceRoutes);
 app.use('/payouts', payoutRoutes);
+app.use('/master-agent', masterRoutes);
+app.use('/admin', adminRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -60,14 +64,16 @@ app.use((req, res) => {
 // Error handler
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`\n  🔷 Blockstar API running on port ${PORT}`);
-  console.log(`  📍 http://localhost:${PORT}`);
-  console.log(`  🏥 Health: http://localhost:${PORT}/health`);
-  console.log(`  ⚡ Caching enabled (5 min marketplace, 10 sec balance)`);
-  console.log(`  🛡️  Rate limiting active`);
-  console.log(`  📦 Compression enabled\n`);
-});
+// Start server (only in non-serverless environments)
+if (process.env.VERCEL !== '1' && !process.env.VERCEL_ENV) {
+  app.listen(PORT, () => {
+    console.log(`\n  🔷 Blockstar API running on port ${PORT}`);
+    console.log(`  📍 http://localhost:${PORT}`);
+    console.log(`  🏥 Health: http://localhost:${PORT}/health`);
+    console.log(`  ⚡ Caching enabled (5 min marketplace, 10 sec balance)`);
+    console.log(`  🛡️  Rate limiting active`);
+    console.log(`  📦 Compression enabled\n`);
+  });
+}
 
 export default app;

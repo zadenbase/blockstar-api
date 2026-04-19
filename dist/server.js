@@ -49,6 +49,8 @@ const purchases_1 = __importDefault(require("./routes/purchases"));
 const extractions_1 = __importDefault(require("./routes/extractions"));
 const balance_1 = __importDefault(require("./routes/balance"));
 const payouts_1 = __importDefault(require("./routes/payouts"));
+const master_1 = __importDefault(require("./routes/master"));
+const admin_1 = __importDefault(require("./routes/admin"));
 dotenv.config();
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
@@ -77,6 +79,8 @@ app.use('/purchases', purchases_1.default);
 app.use('/extractions', extractions_1.default);
 app.use('/users', balance_1.default);
 app.use('/payouts', payouts_1.default);
+app.use('/master-agent', master_1.default);
+app.use('/admin', admin_1.default);
 // 404 handler
 app.use((req, res) => {
     res.status(404).json({
@@ -87,14 +91,16 @@ app.use((req, res) => {
 });
 // Error handler
 app.use(errorHandler_1.errorHandler);
-// Start server
-app.listen(PORT, () => {
-    console.log(`\n  🔷 Blockstar API running on port ${PORT}`);
-    console.log(`  📍 http://localhost:${PORT}`);
-    console.log(`  🏥 Health: http://localhost:${PORT}/health`);
-    console.log(`  ⚡ Caching enabled (5 min marketplace, 10 sec balance)`);
-    console.log(`  🛡️  Rate limiting active`);
-    console.log(`  📦 Compression enabled\n`);
-});
+// Start server (only in non-serverless environments)
+if (process.env.VERCEL !== '1' && !process.env.VERCEL_ENV) {
+    app.listen(PORT, () => {
+        console.log(`\n  🔷 Blockstar API running on port ${PORT}`);
+        console.log(`  📍 http://localhost:${PORT}`);
+        console.log(`  🏥 Health: http://localhost:${PORT}/health`);
+        console.log(`  ⚡ Caching enabled (5 min marketplace, 10 sec balance)`);
+        console.log(`  🛡️  Rate limiting active`);
+        console.log(`  📦 Compression enabled\n`);
+    });
+}
 exports.default = app;
 //# sourceMappingURL=server.js.map

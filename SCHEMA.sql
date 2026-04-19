@@ -66,6 +66,7 @@ CREATE TABLE balance_ledger (
   amount DECIMAL(10,4) NOT NULL,
   transaction_type VARCHAR(20) NOT NULL,
   related_purchase_id UUID REFERENCES purchases(id),
+  metadata JSONB, -- Stores agent name, trade details, etc.
   created_at TIMESTAMP DEFAULT NOW()
 );
 

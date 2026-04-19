@@ -147,8 +147,42 @@ curl "http://localhost:3000/purchases/history?limit=20" \
 
 ### Extractions
 
+#### `GET /extractions/:id/preview`
+Preview extraction reward without actually extracting. Shows expected reward with full breakdown.
+
+```bash
+curl "http://localhost:3000/extractions/purchase-uuid/preview" \
+  -H "Authorization: Bearer <token>"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "purchaseId": "purchase-uuid",
+    "agentId": "...",
+    "agentName": "XR-4729",
+    "agentRiskTier": "medium",
+    "agentVolatilityMod": 1.22,
+    "expectedReward": 0.61,
+    "rewardBreakdown": {
+      "baseAmount": 0.50,
+      "volatilityMultiplier": 1.22,
+      "probabilityTier": "common (70%)",
+      "calculation": "$0.50 × 1.22 = $0.61"
+    },
+    "currentBalance": 10.50,
+    "projectedBalance": 11.11,
+    "note": "This is a preview. Actual reward will be the same if extracted today.",
+    "canExtract": true
+  },
+  "timestamp": "2026-04-17T..."
+}
+```
+
 #### `POST /extractions/:id/initiate`
-Start extraction and generate reward.
+Start extraction and generate reward. Creates a ledger entry with full agent details.
 
 ```bash
 curl -X POST http://localhost:3000/extractions/purchase-uuid/initiate \
@@ -162,11 +196,179 @@ curl -X POST http://localhost:3000/extractions/purchase-uuid/initiate \
   "data": {
     "purchaseId": "...",
     "agentId": "...",
-    "reward": 4.37,
-    "status": "completed"
+    "agentName": "XR-4729",
+    "agentRiskTier": "medium",
+    "agentVolatilityMod": 1.22,
+    "reward": 0.61,
+    "status": "completed",
+    "previousBalance": 10.50,
+    "newBalance": 11.11
   }
 }
 ```
+
+---
+
+### Master Agent Trading
+
+Real-time BTC trading with user-controlled closing. Enter a trade and close anytime within 1 hour to lock in profits.
+
+#### `GET /master-agent/signal`
+Get live trading signal based on Bollinger Bands (30s cache).
+
+```bash
+curl "http://localhost:3000/master-agent/signal"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "signal": "FADE",
+    "direction": "SHORT",
+    "grade": "A+",
+    "confidence": 87,
+    "bandPos": 0.95,
+    "btcPrice": 84750.00,
+    "upper": 85100.00,
+    "lower": 84200.00,
+    "mean": 84650.00,
+    "ts": "2026-04-17T..."
+  }
+}
+```
+
+#### `GET /master-agent/tiers`
+Get leverage and risk/reward for each tier.
+
+```bash
+curl "http://localhost:3000/master-agent/tiers"
+```
+
+#### `POST /master-agent/enter`
+Enter a trade at current BTC price. Trade stays active up to 1 hour.
+
+```bash
+curl -X POST http://localhost:3000/master-agent/enter \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "tier": "medium" }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "sessionId": "0x123...-1713360000000",
+    "signal": "FADE",
+    "direction": "SHORT",
+    "grade": "A+",
+    "confidence": 87,
+    "entryPrice": 84750.00,
+    "tier": "medium",
+    "leverage": 15,
+    "tp_pct": "1.2",
+    "sl_pct": "0.6",
+    "maxDurationSec": 3600,
+    "message": "// SHORT entered at $84750.00 — close anytime within 60 minutes",
+    "ts": "2026-04-17T..."
+  }
+}
+```
+
+#### `GET /master-agent/pnl`
+Get **live P&L** for active trade without closing. Poll this endpoint to watch profits grow!
+
+```bash
+curl "http://localhost:3000/master-agent/pnl" \
+  -H "Authorization: Bearer <token>"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "sessionId": "0x123...-1713360000000",
+    "signal": "FADE",
+    "grade": "A+",
+    "direction": "SHORT",
+    "entryPrice": 84750.00,
+    "currentBTCPrice": 84200.00,
+    "btcChangePct": -0.649,
+    "leverage": 15,
+    "positionUsd": 75.00,
+    "grossPnl": 0.4875,
+    "fees": 0.01,
+    "netPnl": 0.4775,
+    "profitable": true,
+    "tradeDurationSec": 45,
+    "remainingSec": 3555,
+    "maxDurationSec": 3600,
+    "canClose": true,
+    "minDurationSec": 1,
+    "autoCloseReason": null,
+    "tpPct": "1.2",
+    "slPct": "0.6",
+    "ts": "2026-04-17T..."
+  }
+}
+```
+
+**Key fields:**
+- `netPnl` - Current profit/loss (can be positive or negative)
+- `canClose` - Whether you can close now (after 1 second min)
+- `remainingSec` - Seconds left before auto-close
+- `autoCloseReason` - `null` while open, or `take_profit`/`stop_loss`/`max_duration` if triggered
+
+#### `POST /master-agent/resolve`
+Close the trade and lock in P&L. Can be called anytime after 1 second, up to 1 hour.
+
+```bash
+curl -X POST http://localhost:3000/master-agent/resolve \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{ "sessionId": "0x123...-1713360000000" }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "sessionId": "0x123...-1713360000000",
+    "signal": "FADE",
+    "grade": "A+",
+    "direction": "SHORT",
+    "entryPrice": 84750.00,
+    "exitPrice": 84200.00,
+    "btcChangePct": -0.649,
+    "leverage": 15,
+    "positionUsd": 75.00,
+    "grossPnl": 0.4875,
+    "fees": 0.01,
+    "netPnl": 0.4775,
+    "outcome": "market",
+    "profitable": true,
+    "rewardAmount": 0.4775,
+    "lossAmount": 0,
+    "tradeDurationSec": 45,
+    "ts": "2026-04-17T..."
+  }
+}
+```
+
+**Trading Strategy:**
+1. Enter when you see a strong signal (A+ grade recommended)
+2. Poll `/pnl` every few seconds to watch your profit
+3. When `netPnl` spikes high, hit `/resolve` to lock it in!
+4. Trade auto-closes after 1 hour if you don't close it
+
+**Fees:** 0.2% round-trip (0.1% entry + 0.1% exit)
+
+**Cooldown:** 5 minutes between trades (prevents spam)
 
 ---
 
@@ -196,12 +398,56 @@ curl "http://localhost:3000/users/0x1234.../balance" \
 ```
 
 #### `GET /users/:wallet/balance-history`
-Get transaction history (requires auth).
+Get transaction history (requires auth). Every extraction, purchase, and payout is logged with metadata.
 
 ```bash
 curl "http://localhost:3000/users/0x1234.../balance-history?limit=20" \
   -H "Authorization: Bearer <token>"
 ```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "ledger-uuid",
+      "user_id": "0x1234...",
+      "amount": 0.61,
+      "transaction_type": "extraction",
+      "related_purchase_id": "purchase-uuid",
+      "metadata": "{\"agentName\":\"XR-4729\",\"agentId\":\"...\",\"note\":\"Extracted $0.61 from XR-4729 (medium tier, 1.22x volatility)\"}",
+      "parsedMetadata": {
+        "agentName": "XR-4729",
+        "agentId": "...",
+        "note": "Extracted $0.61 from XR-4729 (medium tier, 1.22x volatility)"
+      },
+      "created_at": "2026-04-17T..."
+    },
+    {
+      "id": "ledger-uuid-2",
+      "user_id": "0x1234...",
+      "amount": -5.00,
+      "transaction_type": "purchase",
+      "related_purchase_id": null,
+      "metadata": "{\"agentName\":\"APEX-1234\",\"agentRiskTier\":\"medium\",\"note\":\"Purchased APEX-1234 (medium tier) for $5\"}",
+      "parsedMetadata": {
+        "agentName": "APEX-1234",
+        "agentRiskTier": "medium",
+        "note": "Purchased APEX-1234 (medium tier) for $5"
+      },
+      "created_at": "2026-04-17T..."
+    }
+  ],
+  "timestamp": "2026-04-17T..."
+}
+```
+
+**Transaction Types:**
+- `extraction` — Agent extraction reward (positive) or master agent trade loss (negative)
+- `purchase` — Agent purchase cost (negative)
+- `payout` — Withdrawal request (negative)
+- `admin_credit` / `admin_debit` — Admin balance adjustments
 
 ---
 

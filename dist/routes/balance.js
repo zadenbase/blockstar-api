@@ -53,5 +53,13 @@ router.get('/:wallet/balance-history', auth_1.authMiddleware, (0, errorHandler_1
         timestamp: new Date().toISOString()
     });
 }));
+// GET /users/:wallet/payouts
+router.get('/:wallet/payouts', auth_1.authMiddleware, (0, errorHandler_1.asyncHandler)(async (req, res) => {
+    const walletAddress = req.params.wallet;
+    if (req.walletAddress !== walletAddress)
+        throw new errorHandler_1.AppError(403, 'Unauthorized');
+    const payouts = await supabase_1.supabase.getPayoutHistory(walletAddress);
+    res.json({ success: true, data: payouts, timestamp: new Date().toISOString() });
+}));
 exports.default = router;
 //# sourceMappingURL=balance.js.map
